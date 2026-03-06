@@ -151,7 +151,7 @@ internal object ToolPkgArchiveParser {
         sourcePath: String,
         isBuiltIn: Boolean,
         parseJsPackage: (String, (String, String) -> Unit) -> ToolPackage?,
-        parseMainRegistration: (String, String) -> ToolPkgMainRegistration?,
+        parseMainRegistration: (String, String, String) -> ToolPkgMainRegistration?,
         reportPackageLoadError: (String, String) -> Unit
     ): ToolPkgLoadResult {
         val manifestEntryName = findManifestEntry(entries)
@@ -289,7 +289,7 @@ internal object ToolPkgArchiveParser {
                 LocalizedText.of(manifest.toolpkgId)
             }
         val mainRegistration =
-            parseMainRegistration(mainScriptText, manifest.toolpkgId)
+            parseMainRegistration(mainScriptText, manifest.toolpkgId, normalizedMainEntry)
                 ?: throw IllegalArgumentException(
                     "Failed to parse main registration from '${manifest.main}'. " +
                         "main script must export registerToolPkg()"

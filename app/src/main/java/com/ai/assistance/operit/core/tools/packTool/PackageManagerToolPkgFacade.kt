@@ -584,7 +584,8 @@ internal class PackageManagerToolPkgFacade(
             "functionName" to functionName,
             "toolPkgId" to runtime.packageName,
             "containerPackageName" to runtime.packageName,
-            "__operit_ui_package_name" to runtime.packageName
+            "__operit_ui_package_name" to runtime.packageName,
+            "__operit_script_screen" to runtime.mainEntry
         )
             if (!normalizedPluginId.isNullOrBlank()) {
                 params["pluginId"] = normalizedPluginId

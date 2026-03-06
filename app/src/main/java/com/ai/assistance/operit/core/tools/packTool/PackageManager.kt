@@ -780,10 +780,11 @@ private constructor(private val context: Context, private val aiToolHandler: AIT
                         sourcePath = file.absolutePath,
                         isBuiltIn = false,
                         parseJsPackage = { jsContent, onError -> parseJsPackage(jsContent, onError) },
-                        parseMainRegistration = { mainScriptText, toolPkgId ->
+                        parseMainRegistration = { mainScriptText, toolPkgId, mainScriptPath ->
                             ToolPkgMainRegistrationScriptParser.parse(
                                 script = mainScriptText,
                                 toolPkgId = toolPkgId,
+                                mainScriptPath = mainScriptPath,
                                 jsEngine = jsEngine
                             )
                         },
@@ -831,10 +832,11 @@ private constructor(private val context: Context, private val aiToolHandler: AIT
                         sourcePath = assetPath,
                         isBuiltIn = true,
                         parseJsPackage = { jsContent, onError -> parseJsPackage(jsContent, onError) },
-                        parseMainRegistration = { mainScriptText, toolPkgId ->
+                        parseMainRegistration = { mainScriptText, toolPkgId, mainScriptPath ->
                             ToolPkgMainRegistrationScriptParser.parse(
                                 script = mainScriptText,
                                 toolPkgId = toolPkgId,
+                                mainScriptPath = mainScriptPath,
                                 jsEngine = jsEngine
                             )
                         },

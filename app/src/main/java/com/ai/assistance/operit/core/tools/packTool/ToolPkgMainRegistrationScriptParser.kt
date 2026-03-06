@@ -11,6 +11,7 @@ internal object ToolPkgMainRegistrationScriptParser {
     fun parse(
         script: String,
         toolPkgId: String,
+        mainScriptPath: String,
         jsEngine: JsEngine
     ): ToolPkgMainRegistration? {
         return try {
@@ -23,7 +24,8 @@ internal object ToolPkgMainRegistrationScriptParser {
                             "toolPkgId" to toolPkgId,
                             "__operit_ui_package_name" to toolPkgId,
                             "__operit_plugin_id" to "registerToolPkg:$toolPkgId",
-                            "__operit_registration_mode" to true
+                            "__operit_registration_mode" to true,
+                            "__operit_script_screen" to mainScriptPath
                         )
                 )
             val uiModules = parseRegisteredUiModules(captured.toolboxUiModules)

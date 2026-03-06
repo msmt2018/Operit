@@ -249,6 +249,15 @@ object XmlRenderPluginRegistry {
                 return@LaunchedEffect
             }
 
+            val mergedState = linkedMapOf<String, Any?>().apply {
+                putAll(renderResult?.state ?: emptyMap())
+                putAll(result.state)
+            }
+            val mergedMemo = linkedMapOf<String, Any?>().apply {
+                putAll(renderResult?.memo ?: emptyMap())
+                putAll(result.memo)
+            }
+
             val rawResult =
                 withContext(Dispatchers.IO) {
                     jsEngine.executeComposeDslScript(
@@ -260,8 +269,8 @@ object XmlRenderPluginRegistry {
                                 "uiModuleId" to "xml_render",
                                 "__operit_script_screen" to screenPath,
                                 "moduleSpec" to buildModuleSpec(screenPath),
-                                "state" to result.state,
-                                "memo" to result.memo
+                                "state" to mergedState,
+                                "memo" to mergedMemo
                             )
                     )
                 }
