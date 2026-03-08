@@ -4,7 +4,7 @@ exports.DEEPSEARCH_EN_US = void 0;
 exports.DEEPSEARCH_EN_US = {
     menuTitle: "Deep Search",
     menuDescription: "Enable planning mode for deeper analysis and decomposition",
-    executionPlanTitle: "Execution Plan",
+    executionPlanTitle: "Deep Search",
     executionPlanPreparing: "Preparing execution plan...",
     executionPlanParseFailed: "Execution plan parsing failed. Please check the plan data format.",
     executionPlanError: error => `Error: ${error}`,

@@ -68,6 +68,7 @@ import com.ai.assistance.operit.R
 import com.ai.assistance.operit.core.tools.StringResultData
 import com.ai.assistance.operit.core.tools.ToolExecutor
 import com.ai.assistance.operit.core.tools.VisitWebResultData
+import com.ai.assistance.operit.data.preferences.DisplayPreferencesManager
 import com.ai.assistance.operit.data.model.AITool
 import com.ai.assistance.operit.data.model.ToolResult
 import com.ai.assistance.operit.data.model.ToolValidationResult
@@ -888,11 +889,13 @@ class StandardWebVisitTool(private val context: Context) : ToolExecutor {
 
         val extractionRequested = remember { mutableStateOf(false) }
         val loadToken = remember { mutableStateOf(0) }
+        val displayPreferencesManager = remember { DisplayPreferencesManager.getInstance(context) }
+        val visitWebWaitSeconds by displayPreferencesManager.visitWebWaitSeconds.collectAsState(initial = 0)
 
         // 自动模式状态
         val autoModeEnabled = remember { mutableStateOf(true) } // 是否启用自动模式
         val autoCountdownActive = remember { mutableStateOf(false) } // 倒计时是否激活
-        val autoCountdownSeconds = remember { mutableStateOf(5) } // 倒计时秒数
+        val autoCountdownSeconds = remember { mutableStateOf(0) } // 倒计时秒数
         val isCaptchaVerification = remember { mutableStateOf(false) } // 是否需要人机验证
 
         LaunchedEffect(isCaptchaVerification.value) {
@@ -902,7 +905,7 @@ class StandardWebVisitTool(private val context: Context) : ToolExecutor {
         // 修改LaunchedEffect部分，使滚动和倒计时同时进行
         LaunchedEffect(autoCountdownActive.value, isCaptchaVerification.value) {
             if (autoCountdownActive.value) {
-                val countdownDuration = if (isCaptchaVerification.value) 60 else 5
+                val countdownDuration = if (isCaptchaVerification.value) 60 else visitWebWaitSeconds
                 autoCountdownSeconds.value = countdownDuration
 
                 for (i in countdownDuration downTo 1) {
@@ -945,7 +948,7 @@ class StandardWebVisitTool(private val context: Context) : ToolExecutor {
 
                         if (autoModeEnabled.value) {
                             autoCountdownActive.value = true
-                            autoScrollToBottom(webView) {
+                            autoScrollToBottom(webView, visitWebWaitSeconds) {
                                 AppLogger.d(TAG, "页面滚动完成")
                             }
                         }
@@ -1160,7 +1163,7 @@ class StandardWebVisitTool(private val context: Context) : ToolExecutor {
 
                                                                     if (autoModeEnabled.value) {
                                                                         autoCountdownActive.value = true
-                                                                        autoScrollToBottom(view) {
+                                                                        autoScrollToBottom(view, visitWebWaitSeconds) {
                                                                             AppLogger.d(TAG, "页面滚动完成")
                                                                         }
                                                                     }
@@ -1633,7 +1636,8 @@ class StandardWebVisitTool(private val context: Context) : ToolExecutor {
     }
 
     /** 自动滚动页面到底部以触发可能的懒加载内容 */
-    private fun autoScrollToBottom(webView: WebView, onScrollComplete: () -> Unit) {
+    private fun autoScrollToBottom(webView: WebView, scrollWaitSeconds: Int, onScrollComplete: () -> Unit) {
+        val scrollWaitMillis = scrollWaitSeconds.coerceAtLeast(0) * 1000L
         val scrollScript =
                 """
             (function() {
@@ -1735,8 +1739,8 @@ class StandardWebVisitTool(private val context: Context) : ToolExecutor {
                                 AppLogger.d(TAG, "自动滚动等待完成，继续处理")
                                 onScrollComplete()
                             },
-                            5000
-                    ) // 给页面5秒钟的滚动时间
+                            scrollWaitMillis
+                    )
         } catch (e: Exception) {
             AppLogger.e(TAG, "执行滚动脚本时出错", e)
             // 出错时也要继续后续流程

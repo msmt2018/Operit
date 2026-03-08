@@ -2075,7 +2075,7 @@ fun CharacterCardTab(
                             expanded = sortMenuExpanded,
                             onDismissRequest = { sortMenuExpanded = false },
                             modifier = Modifier
-                                .background(Color.White, RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(8.dp))
                         ) {
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.character_card_sort_default)) },
@@ -2250,7 +2250,7 @@ fun CharacterCardItem(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false },
                         modifier = Modifier
-                            .background(Color.White, RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(8.dp))
                     ) {
                         if (!isActive) {
                             DropdownMenuItem(
@@ -2707,7 +2707,10 @@ private fun GroupCardItem(
                     DropdownMenu(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false },
-                        modifier = Modifier.background(Color.White, RoundedCornerShape(8.dp))
+                        modifier = Modifier.background(
+                            MaterialTheme.colorScheme.surfaceContainer,
+                            RoundedCornerShape(8.dp)
+                        )
                     ) {
                         if (!isActive) {
                             DropdownMenuItem(

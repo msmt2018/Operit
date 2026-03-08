@@ -206,6 +206,7 @@ sendIntermediateResult({ state, chatId });
 - `system.md`
 - `tasker.md`
 - `tool-types.md`
+- `toolpkg.md`
 - `ui.md`
 - `workflow.md`
 
@@ -216,7 +217,6 @@ sendIntermediateResult({ state, chatId });
 - `compose-dsl.d.ts`
 - `compose-dsl.material3.generated.d.ts`
 - `java-bridge.d.ts`
-- `toolpkg.d.ts`
 - `pako.d.ts`
 
 这些类型已经由 `index.d.ts` 重导出，使用时仍然以对应 `.d.ts` 为准。
@@ -226,3 +226,4 @@ sendIntermediateResult({ state, chatId });
 - `examples/types/index.d.ts`
 - `docs/package_dev/core.md`
 - `docs/package_dev/results.md`
+- `docs/package_dev/toolpkg.md`

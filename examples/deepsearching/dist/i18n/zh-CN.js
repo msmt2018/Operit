@@ -4,7 +4,7 @@ exports.DEEPSEARCH_ZH_CN = void 0;
 exports.DEEPSEARCH_ZH_CN = {
     menuTitle: "深度搜索",
     menuDescription: "启用计划模式进行更深入的分析与分解",
-    executionPlanTitle: "执行计划",
+    executionPlanTitle: "深度搜索",
     executionPlanPreparing: "正在准备执行计划...",
     executionPlanParseFailed: "执行计划解析失败，请检查计划数据格式",
     executionPlanError: error => `错误: ${error}`,

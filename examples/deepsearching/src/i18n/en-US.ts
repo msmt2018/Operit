@@ -4,7 +4,7 @@ export const DEEPSEARCH_EN_US: DeepSearchI18n = {
   menuTitle: "Deep Search",
   menuDescription: "Enable planning mode for deeper analysis and decomposition",
 
-  executionPlanTitle: "Execution Plan",
+  executionPlanTitle: "Deep Search",
   executionPlanPreparing: "Preparing execution plan...",
   executionPlanParseFailed: "Execution plan parsing failed. Please check the plan data format.",
   executionPlanError: error => `Error: ${error}`,
