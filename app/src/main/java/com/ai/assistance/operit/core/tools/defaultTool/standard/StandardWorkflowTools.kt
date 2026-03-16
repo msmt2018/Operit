@@ -10,7 +10,12 @@ import com.ai.assistance.operit.data.model.*
 import com.ai.assistance.operit.data.model.AITool
 import com.ai.assistance.operit.data.model.ToolResult
 import com.ai.assistance.operit.data.repository.WorkflowRepository
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -766,19 +771,21 @@ class StandardWorkflowTools(private val context: Context) {
      * 触发工作流执行
      */
     suspend fun triggerWorkflow(tool: AITool): ToolResult {
-        return try {
-            val workflowId = tool.parameters.find { it.name == "workflow_id" }?.value
-            if (workflowId.isNullOrBlank()) {
-                return ToolResult(
-                    toolName = tool.name,
-                    success = false,
-                    result = StringResultData(""),
-                    error = "Workflow ID cannot be empty"
-                )
-            }
+        val workflowId = tool.parameters.find { it.name == "workflow_id" }?.value
+        if (workflowId.isNullOrBlank()) {
+            return ToolResult(
+                toolName = tool.name,
+                success = false,
+                result = StringResultData(""),
+                error = "Workflow ID cannot be empty"
+            )
+        }
 
+        val currentJob = currentCoroutineContext().job
+
+        return try {
             val result = workflowRepository.triggerWorkflow(workflowId)
-            
+
             if (result.isSuccess) {
                 ToolResult(
                     toolName = tool.name,
@@ -793,6 +800,11 @@ class StandardWorkflowTools(private val context: Context) {
                     error = "Failed to trigger workflow: ${result.exceptionOrNull()?.message}"
                 )
             }
+        } catch (e: CancellationException) {
+            withContext(NonCancellable) {
+                workflowRepository.cancelWorkflow(workflowId, currentJob)
+            }
+            throw e
         } catch (e: Exception) {
             AppLogger.e(TAG, "Failed to trigger workflow", e)
             ToolResult(

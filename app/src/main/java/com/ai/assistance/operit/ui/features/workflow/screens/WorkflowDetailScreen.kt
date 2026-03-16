@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
@@ -120,7 +121,9 @@ fun WorkflowDetailScreen(
 
     val workflow = viewModel.currentWorkflow
     val nodeExecutionStates by viewModel.nodeExecutionStates.collectAsState()
+    val runningWorkflowIds by viewModel.runningWorkflowIds.collectAsState()
     val latestExecutionRecord = viewModel.latestExecutionRecord
+    val isWorkflowRunning = runningWorkflowIds.contains(workflowId)
 
     CustomScaffold(
         floatingActionButton = {
@@ -139,12 +142,24 @@ fun WorkflowDetailScreen(
                             horizontalAlignment = Alignment.End,
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            if (workflow.enabled) {
+                            if (workflow.enabled || isWorkflowRunning) {
                                 SpeedDialAction(
-                                    text = stringResource(R.string.workflow_action_trigger),
-                                    icon = Icons.Default.PlayArrow,
+                                    text = if (isWorkflowRunning) {
+                                        stringResource(R.string.cancel)
+                                    } else {
+                                        stringResource(R.string.workflow_action_trigger)
+                                    },
+                                    icon = if (isWorkflowRunning) {
+                                        Icons.Default.Close
+                                    } else {
+                                        Icons.Default.PlayArrow
+                                    },
                                     onClick = {
-                                        viewModel.triggerWorkflow(workflowId) { result -> showTriggerResult = result }
+                                        if (isWorkflowRunning) {
+                                            viewModel.cancelWorkflow(workflowId) { result -> showTriggerResult = result }
+                                        } else {
+                                            viewModel.triggerWorkflow(workflowId) { result -> showTriggerResult = result }
+                                        }
                                         isFabMenuExpanded = false
                                     }
                                 )

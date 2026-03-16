@@ -334,7 +334,7 @@ private class WebSessionOverlayLifecycleOwner :
             sessions[sessionId] = session
             addSessionOrder(sessionId)
 
-            val controller = ensureOverlayOnMain(appContext)
+            val controller = ensureOverlayOnMain(appContext, initialExpanded = false)
             addSessionTabOnMain(controller, session)
             activateSessionOnMain(controller, sessionId)
             setExpandedOnMain(controller, false)
@@ -1193,7 +1193,10 @@ private class WebSessionOverlayLifecycleOwner :
             }
     }
 
-    private fun ensureOverlayOnMain(appContext: Context): OverlayController {
+    private fun ensureOverlayOnMain(
+        appContext: Context,
+        initialExpanded: Boolean = true
+    ): OverlayController {
         overlayController?.let { return it }
 
         synchronized(overlayLock) {
@@ -1343,7 +1346,8 @@ private class WebSessionOverlayLifecycleOwner :
                     closeButton = closeButton
                 )
 
-            controller.overlayParams = createOverlayLayoutParamsOnMain(expanded = true)
+            controller.isExpanded = initialExpanded
+            controller.overlayParams = createOverlayLayoutParamsOnMain(expanded = initialExpanded)
             windowManager.addView(rootView, controller.overlayParams)
 
             minimizeButton.setOnClickListener {
@@ -1651,6 +1655,7 @@ private class WebSessionOverlayLifecycleOwner :
         controller.isExpanded = expanded
 
         if (expanded) {
+            controller.rootView.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
             controller.rootView.setMinimizedMeasure(false)
             controller.rootView.setBackgroundColor(AndroidColor.argb(110, 0, 0, 0))
             controller.cardView.visibility = View.VISIBLE
@@ -1668,6 +1673,7 @@ private class WebSessionOverlayLifecycleOwner :
                 showIndicatorOnMain(controller)
             }
 
+            controller.rootView.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
             val displayMetrics = context.resources.displayMetrics
             controller.rootView.setMinimizedMeasure(
                 enabled = true,
@@ -1713,6 +1719,8 @@ private class WebSessionOverlayLifecycleOwner :
                 if (!webView.hasFocus()) {
                     webView.requestFocus()
                 }
+            } else {
+                webView.clearFocus()
             }
         } catch (e: Exception) {
             AppLogger.w(TAG, "Failed to keep active WebView running: ${e.message}")

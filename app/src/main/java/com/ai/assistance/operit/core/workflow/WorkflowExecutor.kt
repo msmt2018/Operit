@@ -22,7 +22,10 @@ import com.ai.assistance.operit.data.model.WorkflowLogLevel
 import com.ai.assistance.operit.data.model.WorkflowNode
 import com.ai.assistance.operit.data.model.WorkflowNodeConnection
 import com.ai.assistance.operit.core.tools.MessageSendResultData
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.util.LinkedList
 import java.util.Queue
@@ -72,6 +75,19 @@ class WorkflowExecutor(private val context: Context) {
     
     companion object {
         private const val TAG = "WorkflowExecutor"
+    }
+
+    private fun throwCancellation(
+        node: WorkflowNode,
+        runLogger: WorkflowRunLogger,
+        e: CancellationException
+    ): Nothing {
+        runLogger.w(
+            context.getString(R.string.workflow_log_node_cancelled, node.name),
+            nodeId = node.id,
+            nodeName = node.name
+        )
+        throw e
     }
 
     private class WorkflowRunLogger(
@@ -574,6 +590,8 @@ class WorkflowExecutor(private val context: Context) {
                 )
             )
             
+            currentCoroutineContext().ensureActive()
+
             // 3. 构建依赖图
             val dependencyGraph = buildDependencyGraph(workflow)
             
@@ -624,6 +642,9 @@ class WorkflowExecutor(private val context: Context) {
                 message = "Workflow executed successfully"
             )
             
+        } catch (e: CancellationException) {
+            runLogger.w(context.getString(R.string.workflow_log_execution_cancelled, workflow.name))
+            throw e
         } catch (e: Exception) {
             runLogger.e(context.getString(R.string.workflow_log_execution_exception), throwable = e)
             return@withContext buildResult(
@@ -776,6 +797,7 @@ class WorkflowExecutor(private val context: Context) {
         }
         
         while (queue.isNotEmpty()) {
+            currentCoroutineContext().ensureActive()
             val currentNodeId = queue.poll() ?: break
             
             // 检查节点是否已经被执行过
@@ -964,6 +986,8 @@ class WorkflowExecutor(private val context: Context) {
         onNodeStateChange: (nodeId: String, state: NodeExecutionState) -> Unit,
         runLogger: WorkflowRunLogger
     ): Boolean {
+        currentCoroutineContext().ensureActive()
+
         if (node is TriggerNode) {
             val triggerPayload = org.json.JSONObject(triggerExtras).toString()
             nodeResults[node.id] = NodeExecutionState.Success(triggerPayload)
@@ -983,6 +1007,8 @@ class WorkflowExecutor(private val context: Context) {
                 nodeResults[node.id] = NodeExecutionState.Success(result)
                 onNodeStateChange(node.id, NodeExecutionState.Success(result))
                 true
+            } catch (e: CancellationException) {
+                throwCancellation(node, runLogger, e)
             } catch (e: Exception) {
                 val errorMsg = context.getString(R.string.workflow_node_execution_exception, e.message ?: "")
                 runLogger.e(errorMsg, nodeId = node.id, nodeName = node.name, throwable = e)
@@ -1012,6 +1038,8 @@ class WorkflowExecutor(private val context: Context) {
                 nodeResults[node.id] = NodeExecutionState.Success(result)
                 onNodeStateChange(node.id, NodeExecutionState.Success(result))
                 true
+            } catch (e: CancellationException) {
+                throwCancellation(node, runLogger, e)
             } catch (e: Exception) {
                 val errorMsg = context.getString(R.string.workflow_node_execution_exception, e.message ?: "")
                 runLogger.e(errorMsg, nodeId = node.id, nodeName = node.name, throwable = e)
@@ -1072,6 +1100,8 @@ class WorkflowExecutor(private val context: Context) {
                 nodeResults[node.id] = NodeExecutionState.Success(extracted)
                 onNodeStateChange(node.id, NodeExecutionState.Success(extracted))
                 true
+            } catch (e: CancellationException) {
+                throwCancellation(node, runLogger, e)
             } catch (e: Exception) {
                 val errorMsg = context.getString(R.string.workflow_node_execution_exception, e.message ?: "")
                 runLogger.e(errorMsg, nodeId = node.id, nodeName = node.name, throwable = e)
@@ -1121,7 +1151,9 @@ class WorkflowExecutor(private val context: Context) {
                 nodeId = node.id,
                 nodeName = node.name
             )
-            
+
+            currentCoroutineContext().ensureActive()
+
             // 执行工具
             val result = toolHandler.executeTool(tool)
             
@@ -1153,6 +1185,8 @@ class WorkflowExecutor(private val context: Context) {
                 return false
             }
             
+        } catch (e: CancellationException) {
+            throwCancellation(node, runLogger, e)
         } catch (e: Exception) {
             val errorMsg = context.getString(R.string.workflow_node_execution_exception, e.message ?: "")
             runLogger.e(

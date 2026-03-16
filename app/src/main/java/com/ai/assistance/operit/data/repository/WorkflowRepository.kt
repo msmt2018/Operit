@@ -17,9 +17,17 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
 import android.content.Intent
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.job
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -53,11 +61,56 @@ class WorkflowRepository(private val context: Context) {
         private var speechTriggerCachedAtMs: Long = 0L
 
         val workflowUpdateEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        private val runningWorkflowLock = Any()
+        private val runningWorkflowJobs = ConcurrentHashMap<String, MutableSet<Job>>()
+        private val _runningWorkflowIds = MutableStateFlow<Set<String>>(emptySet())
+        val runningWorkflowIds: StateFlow<Set<String>> = _runningWorkflowIds.asStateFlow()
 
         fun notifyWorkflowsChanged() {
             speechTriggerCachedWorkflows = null
             speechTriggerCachedAtMs = 0L
             workflowUpdateEvents.tryEmit(Unit)
+        }
+
+        private fun publishRunningWorkflowIdsLocked() {
+            val emptyWorkflowIds = mutableListOf<String>()
+            runningWorkflowJobs.forEach { (workflowId, jobs) ->
+                jobs.removeAll { !it.isActive }
+                if (jobs.isEmpty()) {
+                    emptyWorkflowIds += workflowId
+                }
+            }
+            emptyWorkflowIds.forEach(runningWorkflowJobs::remove)
+            _runningWorkflowIds.value = runningWorkflowJobs.keys.toSet()
+        }
+
+        private fun registerRunningWorkflow(workflowId: String, job: Job) {
+            synchronized(runningWorkflowLock) {
+                runningWorkflowJobs.getOrPut(workflowId) { mutableSetOf() }.add(job)
+                publishRunningWorkflowIdsLocked()
+            }
+        }
+
+        private fun unregisterRunningWorkflow(workflowId: String, job: Job) {
+            synchronized(runningWorkflowLock) {
+                runningWorkflowJobs[workflowId]?.remove(job)
+                publishRunningWorkflowIdsLocked()
+            }
+        }
+
+        private fun getRunningWorkflowJobs(
+            workflowId: String,
+            targetJob: Job? = null
+        ): List<Job> {
+            synchronized(runningWorkflowLock) {
+                publishRunningWorkflowIdsLocked()
+                val jobs = runningWorkflowJobs[workflowId].orEmpty().filter { it.isActive }
+                return if (targetJob == null) {
+                    jobs
+                } else {
+                    jobs.filter { it === targetJob }
+                }
+            }
         }
     }
     
@@ -269,50 +322,12 @@ class WorkflowRepository(private val context: Context) {
         id: String,
         triggerNodeId: String? = null,
         triggerExtras: Map<String, String> = emptyMap()
-    ): Result<String> = withContext(Dispatchers.IO) {
-        try {
-            val workflowResult = getWorkflowById(id)
-            val workflow = workflowResult.getOrNull()
-
-            if (workflow == null) {
-                return@withContext Result.failure(Exception(context.getString(R.string.workflow_not_exist, id)))
-            }
-
-            if (!workflow.enabled) {
-                return@withContext Result.failure(Exception(context.getString(R.string.workflow_disabled, workflow.name)))
-            }
-
-            AppLogger.d(TAG, "Triggering workflow: ${workflow.name} (${workflow.id})")
-            if (triggerNodeId != null) {
-                AppLogger.d(TAG, "With specific trigger node: $triggerNodeId")
-            }
-            
-            // 更新为执行中状态
-            updateExecutionStatus(id, ExecutionStatus.RUNNING, System.currentTimeMillis())
-            
-            // 创建执行器并执行工作流
-            val executor = WorkflowExecutor(context)
-            val result = executor.executeWorkflow(workflow, triggerNodeId, triggerExtras) { nodeId, state ->
-                // 这里可以通过 Flow 或其他机制传递状态更新到 UI
-                AppLogger.d(TAG, "Node $nodeId state: $state")
-            }
-            result.executionRecord?.let { saveExecutionRecord(it) }
-            
-            // 更新执行统计
-            val executionStatus = if (result.success) ExecutionStatus.SUCCESS else ExecutionStatus.FAILED
-            updateExecutionStatistics(id, executionStatus, result.executionTime)
-            
-            if (result.success) {
-                Result.success(context.getString(R.string.workflow_execute_success, workflow.name))
-            } else {
-                Result.failure(Exception(result.message))
-            }
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "Failed to trigger workflow", e)
-            // 执行失败时也更新状态
-            updateExecutionStatus(id, ExecutionStatus.FAILED, System.currentTimeMillis())
-            Result.failure(e)
-        }
+    ): Result<String> = triggerWorkflowInternal(
+        id = id,
+        triggerNodeId = triggerNodeId,
+        triggerExtras = triggerExtras
+    ) { nodeId, state ->
+        AppLogger.d(TAG, "Node $nodeId state: $state")
     }
     
     /**
@@ -326,46 +341,90 @@ class WorkflowRepository(private val context: Context) {
         triggerNodeId: String? = null,
         triggerExtras: Map<String, String> = emptyMap(),
         onNodeStateChange: (nodeId: String, state: NodeExecutionState) -> Unit
-    ): Result<String> = withContext(Dispatchers.IO) {
+    ): Result<String> = triggerWorkflowInternal(
+        id = id,
+        triggerNodeId = triggerNodeId,
+        triggerExtras = triggerExtras,
+        onNodeStateChange = onNodeStateChange
+    )
+
+    suspend fun cancelWorkflow(
+        id: String,
+        targetJob: Job? = null
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
-            val workflowResult = getWorkflowById(id)
-            val workflow = workflowResult.getOrNull()
-
-            if (workflow == null) {
-                return@withContext Result.failure(Exception(context.getString(R.string.workflow_not_exist, id)))
+            val jobs = getRunningWorkflowJobs(id, targetJob)
+            if (jobs.isEmpty()) {
+                return@withContext Result.success(false)
             }
 
-            if (!workflow.enabled) {
-                return@withContext Result.failure(Exception(context.getString(R.string.workflow_disabled, workflow.name)))
+            AppLogger.d(TAG, "Cancelling workflow execution: $id, jobs=${jobs.size}")
+            jobs.forEach { job ->
+                job.cancel(CancellationException(context.getString(R.string.workflow_execution_cancelled)))
             }
+            Result.success(true)
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "Failed to cancel workflow: $id", e)
+            Result.failure(e)
+        }
+    }
 
-            AppLogger.d(TAG, "Triggering workflow with callback: ${workflow.name} (${workflow.id})")
+    private suspend fun triggerWorkflowInternal(
+        id: String,
+        triggerNodeId: String? = null,
+        triggerExtras: Map<String, String> = emptyMap(),
+        onNodeStateChange: (nodeId: String, state: NodeExecutionState) -> Unit
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val workflowResult = getWorkflowById(id)
+        val workflow = workflowResult.getOrNull()
+
+        if (workflow == null) {
+            return@withContext Result.failure(Exception(context.getString(R.string.workflow_not_exist, id)))
+        }
+
+        if (!workflow.enabled) {
+            return@withContext Result.failure(Exception(context.getString(R.string.workflow_disabled_message, workflow.name)))
+        }
+
+        if (getRunningWorkflowJobs(id).isNotEmpty()) {
+            return@withContext Result.failure(Exception(context.getString(R.string.workflow_already_running, workflow.name)))
+        }
+
+        val workflowJob = currentCoroutineContext().job
+        registerRunningWorkflow(id, workflowJob)
+
+        try {
+            AppLogger.d(TAG, "Triggering workflow: ${workflow.name} (${workflow.id})")
             if (triggerNodeId != null) {
                 AppLogger.d(TAG, "With specific trigger node: $triggerNodeId")
             }
-            
-            // 更新为执行中状态
+
             updateExecutionStatus(id, ExecutionStatus.RUNNING, System.currentTimeMillis())
-            
-            // 创建执行器并执行工作流
+
             val executor = WorkflowExecutor(context)
             val result = executor.executeWorkflow(workflow, triggerNodeId, triggerExtras, onNodeStateChange)
             result.executionRecord?.let { saveExecutionRecord(it) }
-            
-            // 更新执行统计
+
             val executionStatus = if (result.success) ExecutionStatus.SUCCESS else ExecutionStatus.FAILED
             updateExecutionStatistics(id, executionStatus, result.executionTime)
-            
+
             if (result.success) {
                 Result.success(context.getString(R.string.workflow_execute_success, workflow.name))
             } else {
                 Result.failure(Exception(result.message))
             }
+        } catch (e: CancellationException) {
+            AppLogger.d(TAG, "Workflow execution cancelled: $id")
+            withContext(NonCancellable) {
+                updateExecutionStatus(id, ExecutionStatus.FAILED, System.currentTimeMillis())
+            }
+            throw e
         } catch (e: Exception) {
-            AppLogger.e(TAG, "Failed to trigger workflow with callback", e)
-            // 执行失败时也更新状态
+            AppLogger.e(TAG, "Failed to trigger workflow", e)
             updateExecutionStatus(id, ExecutionStatus.FAILED, System.currentTimeMillis())
             Result.failure(e)
+        } finally {
+            unregisterRunningWorkflow(id, workflowJob)
         }
     }
     
@@ -417,6 +476,11 @@ class WorkflowRepository(private val context: Context) {
                     workflow.successfulExecutions + 1
                 } else {
                     workflow.successfulExecutions
+                },
+                failedExecutions = if (status == ExecutionStatus.FAILED) {
+                    workflow.failedExecutions + 1
+                } else {
+                    workflow.failedExecutions
                 }
             )
             

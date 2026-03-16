@@ -6949,4 +6949,11 @@
     <string name="max_concurrent_requests_desc">超过该阈值会排队等待。填 0 或留空表示不限制。</string>
     <string name="request_queue_controls">请求队列控制</string>
     <string name="request_queue_controls_desc">默认折叠。用于限制请求频率和并发，超限会排队等待。</string>
+    <string name="workflow_execution_cancelled">工作流执行已取消</string>
+    <string name="workflow_cancel_requested">已发送取消请求</string>
+    <string name="workflow_not_running">工作流当前未在执行</string>
+    <string name="workflow_error_cancel_failed">取消工作流失败</string>
+    <string name="workflow_already_running">工作流“%1$s”正在执行中</string>
+    <string name="workflow_log_node_cancelled">节点“%1$s”执行已取消</string>
+    <string name="workflow_log_execution_cancelled">工作流“%1$s”执行已取消</string>
 </resources>

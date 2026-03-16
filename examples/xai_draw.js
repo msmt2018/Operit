@@ -6,8 +6,8 @@
     "en": "xAI Images and Video"
   },
   "description": {
-    "zh": "使用 xAI 官方图像与视频生成接口。图片走 /v1/images/generations，视频走 /v1/videos/generations + /v1/videos/{request_id} 轮询；生成结果会立即下载到本地，避免临时链接过期。",
-    "en": "Generate images and videos with the official xAI APIs. Images use /v1/images/generations; videos use /v1/videos/generations plus /v1/videos/{request_id} polling. Generated assets are downloaded locally before temporary links expire."
+    "zh": "使用 xAI 官方接口生成图片和视频，并保存到本地。",
+    "en": "Generate images and videos with the official xAI APIs and save them locally."
   },
   "env": [
     {

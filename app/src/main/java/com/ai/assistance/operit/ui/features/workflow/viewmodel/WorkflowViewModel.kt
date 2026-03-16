@@ -23,6 +23,7 @@ import com.ai.assistance.operit.data.model.Workflow
 import com.ai.assistance.operit.data.model.WorkflowExecutionRecord
 import com.ai.assistance.operit.R
 import com.ai.assistance.operit.data.repository.WorkflowRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -60,6 +61,7 @@ class WorkflowViewModel(application: Application) : AndroidViewModel(application
     // 节点执行状态 Map
     private val _nodeExecutionStates = MutableStateFlow<Map<String, NodeExecutionState>>(emptyMap())
     val nodeExecutionStates: StateFlow<Map<String, NodeExecutionState>> = _nodeExecutionStates.asStateFlow()
+    val runningWorkflowIds: StateFlow<Set<String>> = WorkflowRepository.runningWorkflowIds
     
     init {
         loadWorkflows()
@@ -1092,31 +1094,55 @@ class WorkflowViewModel(application: Application) : AndroidViewModel(application
      */
     fun triggerWorkflow(id: String, onComplete: (String) -> Unit = {}) {
         viewModelScope.launch {
-            // 不设置全局 isLoading，以便用户可以看到执行过程
             error = null
             _nodeExecutionStates.value = emptyMap()
-            
-            repository.triggerWorkflowWithCallback(id) { nodeId, state ->
-                // 实时更新节点执行状态，用户可以在画布上看到执行进度
-                _nodeExecutionStates.value = _nodeExecutionStates.value + (nodeId to state)
-            }.fold(
-                onSuccess = { message -> 
-                    // 刷新工作流列表以显示更新的执行统计
-                    loadWorkflows()
-                    // 如果当前正在查看这个工作流，也刷新它
-                    if (currentWorkflow?.id == id) {
-                        loadWorkflow(id)
+
+            try {
+                repository.triggerWorkflowWithCallback(id) { nodeId, state ->
+                    _nodeExecutionStates.value = _nodeExecutionStates.value + (nodeId to state)
+                }.fold(
+                    onSuccess = { message ->
+                        loadWorkflows()
+                        if (currentWorkflow?.id == id) {
+                            loadWorkflow(id)
+                        }
+                        onComplete(message)
+                    },
+                    onFailure = { error ->
+                        loadWorkflows()
+                        if (currentWorkflow?.id == id) {
+                            loadWorkflow(id)
+                        }
+                        this@WorkflowViewModel.error = error.message ?: app.getString(R.string.workflow_error_trigger_failed)
+                        onComplete(app.getString(R.string.workflow_error_execute_failed, error.message ?: ""))
                     }
-                    onComplete(message)
+                )
+            } catch (_: CancellationException) {
+                clearNodeExecutionStates()
+                loadWorkflows(showLoading = false)
+                if (currentWorkflow?.id == id) {
+                    loadWorkflow(id, showLoading = false)
+                }
+            }
+        }
+    }
+
+    fun cancelWorkflow(id: String, onComplete: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            error = null
+
+            repository.cancelWorkflow(id).fold(
+                onSuccess = { cancelled ->
+                    onComplete(
+                        if (cancelled) {
+                            app.getString(R.string.workflow_cancel_requested)
+                        } else {
+                            app.getString(R.string.workflow_not_running)
+                        }
+                    )
                 },
-                onFailure = { error -> 
-                    // 即使失败也刷新，因为失败状态也会被记录
-                    loadWorkflows()
-                    if (currentWorkflow?.id == id) {
-                        loadWorkflow(id)
-                    }
-                    this@WorkflowViewModel.error = error.message ?: app.getString(R.string.workflow_error_trigger_failed)
-                    onComplete(app.getString(R.string.workflow_error_execute_failed, error.message ?: ""))
+                onFailure = {
+                    error = it.message ?: app.getString(R.string.workflow_error_cancel_failed)
                 }
             )
         }
