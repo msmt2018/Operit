@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
 import com.ai.assistance.operit.R
+import com.ai.assistance.operit.api.chat.llmprovider.AIService
 import com.ai.assistance.operit.api.chat.llmprovider.ModelConfigConnectionTester
 import com.ai.assistance.operit.api.chat.llmprovider.ModelConnectionTestType
 import com.ai.assistance.operit.data.model.FunctionType
@@ -91,6 +92,7 @@ fun ModelConfigScreen(
     var isTestingConnection by remember { mutableStateOf(false) }
     var testResults by remember { mutableStateOf<List<ConnectionTestItem>?>(null) }
     var connectionTestJob by remember { mutableStateOf<Job?>(null) }
+    var activeConnectionTestService by remember { mutableStateOf<AIService?>(null) }
 
     // 保存API设置的函数引用
     var saveApiSettings: (() -> Unit)? by remember { mutableStateOf(null) }
@@ -293,6 +295,7 @@ fun ModelConfigScreen(
                             TextButton(
                                 onClick = {
                                     if (isTestingConnection) {
+                                        activeConnectionTestService?.cancelStreaming()
                                         connectionTestJob?.cancel()
                                         return@TextButton
                                     }
@@ -313,7 +316,10 @@ fun ModelConfigScreen(
                                                             context = context,
                                                             modelConfigManager = configManager,
                                                             config = config,
-                                                            customHeadersJson = customHeadersJson
+                                                            customHeadersJson = customHeadersJson,
+                                                            onActiveServiceChanged = {
+                                                                activeConnectionTestService = it
+                                                            }
                                                         )
 
                                                     if (report.strictToolCallFallbackUsed) {
@@ -366,6 +372,7 @@ fun ModelConfigScreen(
                                             }
                                             testResults = results
                                         } finally {
+                                            activeConnectionTestService = null
                                             isTestingConnection = false
                                             connectionTestJob = null
                                         }

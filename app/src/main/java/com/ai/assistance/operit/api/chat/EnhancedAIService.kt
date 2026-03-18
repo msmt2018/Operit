@@ -353,6 +353,11 @@ class EnhancedAIService private constructor(private val context: Context) {
         val eventChannel: MutableSharedStream<TextStreamEvent>,
     )
 
+    private suspend fun startAssistantResponseRound(context: MessageExecutionContext) {
+        context.roundManager.startNewRound()
+        context.streamBuffer.clear()
+    }
+
     // Coroutine management
     private val toolProcessingScope = CoroutineScope(Dispatchers.IO)
     private val toolExecutionJobs = ConcurrentHashMap<String, Job>()
@@ -697,8 +702,7 @@ class EnhancedAIService private constructor(private val context: Context) {
                     var isFirstChunk = true
 
                     // 创建一个新的轮次来管理内容
-                    execContext.roundManager.startNewRound()
-                    execContext.streamBuffer.clear()
+                    startAssistantResponseRound(execContext)
                     val revisionTracker = TextStreamRevisionTracker()
                     val revisionMutex = Mutex()
 
@@ -968,6 +972,280 @@ class EnhancedAIService private constructor(private val context: Context) {
         return trimmed.contains("</$tagName>")
     }
 
+    private data class TruncatedToolRoundRecovery(
+        val repairedContent: String,
+        val appendedSuffix: String,
+        val invalidatedToolNames: List<String>
+    )
+
+    private fun detectAndRepairTruncatedToolRound(content: String): TruncatedToolRoundRecovery? {
+        if (!content.contains("<tool", ignoreCase = true)) {
+            return null
+        }
+
+        val completeToolBlocks = ChatMarkupRegex.toolCallPattern.findAll(content).toList()
+        val openToolPattern =
+            Regex(
+                "<(${ChatMarkupRegex.TOOL_TAG_NAME_REGEX_SOURCE})\\b[^>]*",
+                setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+            )
+
+        val candidate = openToolPattern.findAll(content).lastOrNull { match ->
+            completeToolBlocks.none { block ->
+                match.range.first >= block.range.first && match.range.last <= block.range.last
+            }
+        } ?: return null
+
+        val fragment = content.substring(candidate.range.first)
+        if (!Regex("\\bname\\s*=\\s*\"", RegexOption.IGNORE_CASE).containsMatchIn(fragment)) {
+            return null
+        }
+
+        val tagName =
+            (ChatMarkupRegex.extractOpeningTagName(fragment) ?: candidate.groupValues.getOrNull(1))
+                ?.takeIf { ChatMarkupRegex.isToolTagName(it) }
+                ?: ChatMarkupRegex.generateRandomToolTagName()
+
+        if (Regex("</${Regex.escape(tagName)}\\s*>", RegexOption.IGNORE_CASE).containsMatchIn(fragment)) {
+            return null
+        }
+
+        val appendedSuffix = buildTruncatedToolRepairSuffix(fragment, tagName)
+        if (appendedSuffix.isEmpty()) {
+            return null
+        }
+        val repairedContent = content + appendedSuffix
+        val invalidatedToolNames =
+            buildList {
+                ChatMarkupRegex.toolCallPattern.findAll(content)
+                    .mapNotNull { match ->
+                        match.groupValues.getOrNull(2)?.trim()?.takeIf { it.isNotEmpty() }
+                    }
+                    .forEach { add(it) }
+                extractXmlAttributeValue(fragment, "name")
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { add(it) }
+            }
+                .distinct()
+                .toList()
+
+        return TruncatedToolRoundRecovery(
+            repairedContent = repairedContent,
+            appendedSuffix = appendedSuffix,
+            invalidatedToolNames = invalidatedToolNames
+        )
+    }
+
+    private fun buildTruncatedToolRepairSuffix(fragment: String, fallbackTagName: String): String {
+        val toolTagName =
+            fallbackTagName.takeIf { ChatMarkupRegex.isToolTagName(it) }
+                ?: ChatMarkupRegex.generateRandomToolTagName()
+
+        val openingTagEnd = fragment.indexOf('>')
+        if (openingTagEnd < 0) {
+            return completePartialOpenTag(fragment, toolTagName, defaultNameValue = "truncated_tool_call") +
+                "</$toolTagName>"
+        }
+
+        val body = fragment.substring(openingTagEnd + 1)
+        val completeTagPattern =
+            Regex("</?([A-Za-z][A-Za-z0-9_]*)\\b[^>]*>", RegexOption.IGNORE_CASE)
+        var openParamCount = 0
+
+        completeTagPattern.findAll(body).forEach { match ->
+            val tagText = match.value
+            val tagName = match.groupValues[1]
+            val isClosing = tagText.startsWith("</")
+
+            when {
+                tagName.equals("param", ignoreCase = true) -> {
+                    if (isClosing) {
+                        if (openParamCount > 0) {
+                            openParamCount--
+                        }
+                    } else if (!tagText.endsWith("/>")) {
+                        openParamCount++
+                    }
+                }
+
+                tagName.equals(toolTagName, ignoreCase = true) && isClosing -> {
+                    return ""
+                }
+            }
+        }
+
+        val suffix = StringBuilder()
+        val trailingPartialTag = extractTrailingPartialTag(fragment)
+        var toolClosedBySuffix = false
+
+        if (trailingPartialTag != null) {
+            when {
+                isPartialClosingTagFor(trailingPartialTag, "param") -> {
+                    suffix.append(completePartialClosingTag(trailingPartialTag, "param"))
+                    if (openParamCount > 0) {
+                        openParamCount--
+                    }
+                }
+
+                isPartialOpeningTagFor(trailingPartialTag, "param") -> {
+                    val completedTagNameSuffix = completePartialTagName(trailingPartialTag, "param")
+                    suffix.append(
+                        completePartialOpenTag(
+                            trailingPartialTag + completedTagNameSuffix,
+                            "param",
+                            defaultNameValue = "_truncated_fragment"
+                        )
+                    )
+                    suffix.insert(0, completedTagNameSuffix)
+                    openParamCount++
+                }
+
+                isPartialClosingTagFor(trailingPartialTag, toolTagName) -> {
+                    suffix.append(completePartialClosingTag(trailingPartialTag, toolTagName))
+                    toolClosedBySuffix = true
+                }
+
+                isPartialOpeningTagFor(trailingPartialTag, toolTagName) -> {
+                    val completedTagNameSuffix =
+                        completePartialTagName(trailingPartialTag, toolTagName)
+                    suffix.append(
+                        completePartialOpenTag(
+                            trailingPartialTag + completedTagNameSuffix,
+                            toolTagName,
+                            defaultNameValue = "truncated_tool_call"
+                        )
+                    )
+                    suffix.insert(0, completedTagNameSuffix)
+                }
+
+                trailingPartialTag == "<" -> {
+                    suffix.append("!-- truncated -->")
+                }
+            }
+        }
+
+        repeat(openParamCount) {
+            suffix.append("</param>")
+        }
+        if (!toolClosedBySuffix) {
+            suffix.append("</$toolTagName>")
+        }
+        return suffix.toString()
+    }
+
+    private fun extractXmlAttributeValue(source: String, attributeName: String): String? {
+        val pattern =
+            Regex(
+                "\\b${Regex.escape(attributeName)}\\s*=\\s*\"([^\"]*)\"",
+                RegexOption.IGNORE_CASE
+            )
+        return pattern.find(source)?.groupValues?.getOrNull(1)
+    }
+
+    private fun extractTrailingPartialTag(fragment: String): String? {
+        val lastOpen = fragment.lastIndexOf('<')
+        val lastClose = fragment.lastIndexOf('>')
+        if (lastOpen <= lastClose) {
+            return null
+        }
+        return fragment.substring(lastOpen)
+    }
+
+    private fun completePartialOpenTag(
+        partialTag: String,
+        tagName: String,
+        defaultNameValue: String
+    ): String {
+        val suffix = StringBuilder()
+        val normalizedPartial = partialTag.lowercase()
+        val normalizedTagName = tagName.lowercase()
+        val tagPrefix = "<$normalizedTagName"
+        val attrValueOpenPattern = Regex("\\bname\\s*=\\s*\"[^\"]*$", RegexOption.IGNORE_CASE)
+        val attrEqPattern = Regex("\\bname\\s*=\\s*$", RegexOption.IGNORE_CASE)
+        val defaultAttrPattern =
+            Regex("^<${Regex.escape(tagName)}\\s*$", RegexOption.IGNORE_CASE)
+        val partialNamePatterns =
+            listOf(
+                Regex("\\bn$", RegexOption.IGNORE_CASE) to "ame=\"\"",
+                Regex("\\bna$", RegexOption.IGNORE_CASE) to "me=\"\"",
+                Regex("\\bnam$", RegexOption.IGNORE_CASE) to "e=\"\"",
+                Regex("\\bname$", RegexOption.IGNORE_CASE) to "=\"\""
+            )
+        val partialNameCompletion =
+            partialNamePatterns.firstOrNull { it.first.containsMatchIn(partialTag) }?.second
+
+        when {
+            attrValueOpenPattern.containsMatchIn(partialTag) -> suffix.append("\"")
+            attrEqPattern.containsMatchIn(partialTag) -> suffix.append("\"\"")
+            partialNameCompletion != null -> suffix.append(partialNameCompletion)
+            normalizedPartial == tagPrefix || defaultAttrPattern.matches(partialTag) -> {
+                suffix.append(" name=\"")
+                suffix.append(defaultNameValue)
+                suffix.append("\"")
+            }
+        }
+
+        if (((partialTag.length + suffix.length) > 0) &&
+            ((partialTag + suffix.toString()).count { it == '"' } % 2 != 0)
+        ) {
+            suffix.append("\"")
+        }
+        if (!(partialTag + suffix.toString()).endsWith(">")) {
+            suffix.append(">")
+        }
+        return suffix.toString()
+    }
+
+    private fun isPartialOpeningTagFor(partialTag: String, tagName: String): Boolean {
+        if (!partialTag.startsWith("<") || partialTag.startsWith("</")) {
+            return false
+        }
+        val currentName = Regex("^<([A-Za-z_]*)", RegexOption.IGNORE_CASE)
+            .find(partialTag)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.lowercase()
+            ?: return false
+        if (currentName.isEmpty()) {
+            return false
+        }
+        return tagName.lowercase().startsWith(currentName)
+    }
+
+    private fun isPartialClosingTagFor(partialTag: String, tagName: String): Boolean {
+        if (!partialTag.startsWith("</")) {
+            return false
+        }
+        val currentName = Regex("^</([A-Za-z_]*)", RegexOption.IGNORE_CASE)
+            .find(partialTag)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.lowercase()
+            ?: return false
+        if (currentName.isEmpty()) {
+            return false
+        }
+        return tagName.lowercase().startsWith(currentName)
+    }
+
+    private fun completePartialTagName(partialTag: String, tagName: String): String {
+        val currentName = Regex("^</?([A-Za-z_]*)", RegexOption.IGNORE_CASE)
+            .find(partialTag)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.lowercase()
+            .orEmpty()
+        return tagName.substring(currentName.length.coerceAtMost(tagName.length))
+    }
+
+    private fun completePartialClosingTag(partialTag: String, tagName: String): String {
+        return buildString {
+            append(completePartialTagName(partialTag, tagName))
+            append(">")
+        }
+    }
+
     /** 在处理完流后调用，使用增强的工具检测功能 */
     private suspend fun processStreamCompletion(
             context: MessageExecutionContext,
@@ -1066,23 +1344,37 @@ class EnhancedAIService private constructor(private val context: Context) {
 
             // 使用增强的工具检测功能处理内容
             val enhancedContent = enhanceToolDetection(content)
-            // 如果内容被增强修改了，更新到streamBuffer
-            if (enhancedContent != content) {
+            val truncatedToolRecovery = detectAndRepairTruncatedToolRound(content)
+            val finalContent = truncatedToolRecovery?.repairedContent ?: enhancedContent
+
+            // 截断修复仅追加缺失后缀，不撤回已经发出的内容
+            if (truncatedToolRecovery != null) {
+                val appendedSuffix = truncatedToolRecovery.appendedSuffix
+                if (appendedSuffix.isNotEmpty()) {
+                    context.streamBuffer.append(appendedSuffix)
+                    context.roundManager.updateContent(context.streamBuffer.toString())
+                    collector.emit(appendedSuffix)
+                }
+            } else if (finalContent != content) {
                 context.streamBuffer.setLength(0)
-                context.streamBuffer.append(enhancedContent)
-                // 更新轮次管理器显示内容
-                context.roundManager.updateContent(enhancedContent)
+                context.streamBuffer.append(finalContent)
+                context.roundManager.updateContent(finalContent)
             }
 
             // 预先提取工具调用信息和完成标记，避免重复解析
-            val extractedToolInvocations = ToolExecutionManager.extractToolInvocations(enhancedContent)
-            val hasTaskCompletion = ConversationMarkupManager.containsTaskCompletion(enhancedContent)
+            val extractedToolInvocations =
+                    if (truncatedToolRecovery == null) {
+                        ToolExecutionManager.extractToolInvocations(finalContent)
+                    } else {
+                        emptyList()
+                    }
+            val hasTaskCompletion = ConversationMarkupManager.containsTaskCompletion(finalContent)
 
             // 如果只有任务完成标记且没有工具调用，立即处理完成逻辑
-            if (hasTaskCompletion && extractedToolInvocations.isEmpty()) {
+            if (truncatedToolRecovery == null && hasTaskCompletion && extractedToolInvocations.isEmpty()) {
                 handleTaskCompletion(
                     context = context,
-                    content = enhancedContent,
+                    content = finalContent,
                     enableMemoryQuery = enableMemoryQuery,
                     isSubTask = isSubTask,
                     chatId = chatId,
@@ -1110,6 +1402,46 @@ class EnhancedAIService private constructor(private val context: Context) {
                 return
             }
 
+            if (truncatedToolRecovery != null) {
+                val warningStatus =
+                        ConversationMarkupManager.createWarningStatus(
+                                this@EnhancedAIService.context.getString(
+                                        R.string.enhanced_truncated_tool_call_warning
+                                )
+                        )
+                val warningDisplayContent = "\n$warningStatus"
+                context.roundManager.appendContent(warningDisplayContent)
+                collector.emit(warningDisplayContent)
+                AppLogger.w(
+                        TAG,
+                        "检测到未闭合工具调用，本轮工具全部作废。invalidated=${truncatedToolRecovery.invalidatedToolNames}"
+                )
+                handleToolInvocation(
+                        toolInvocations = emptyList(),
+                        context = context,
+                        functionType = functionType,
+                        collector = collector,
+                        enableThinking = enableThinking,
+                        enableMemoryQuery = enableMemoryQuery,
+                        onNonFatalError = onNonFatalError,
+                        onTokenLimitExceeded = onTokenLimitExceeded,
+                        maxTokens = maxTokens,
+                        tokenUsageThreshold = tokenUsageThreshold,
+                        isSubTask = isSubTask,
+                        characterName = characterName,
+                        avatarUri = avatarUri,
+                        roleCardId = roleCardId,
+                        chatId = chatId,
+                        onToolInvocation = onToolInvocation,
+                        chatModelConfigIdOverride = chatModelConfigIdOverride,
+                        chatModelIndexOverride = chatModelIndexOverride,
+                        stream = stream,
+                        enableGroupOrchestrationHint = enableGroupOrchestrationHint,
+                        toolResultOverrideMessage = warningStatus
+                )
+                return
+            }
+
             // Main flow: Detect and process tool invocations
             if (extractedToolInvocations.isNotEmpty()) {
                 if (hasTaskCompletion) {
@@ -1128,7 +1460,7 @@ class EnhancedAIService private constructor(private val context: Context) {
                 }
 
                 // Handle wait for user need marker
-                if (ConversationMarkupManager.containsWaitForUserNeed(enhancedContent)) {
+                if (ConversationMarkupManager.containsWaitForUserNeed(finalContent)) {
                     val userNeedContent =
                             ConversationMarkupManager.createWarningStatus(
                                     this@EnhancedAIService.context.getString(R.string.enhanced_tool_warning),
@@ -1437,8 +1769,7 @@ class EnhancedAIService private constructor(private val context: Context) {
         // try { collector.emit(toolResultMessage) } catch (_: Exception) {}
 
         // Start new round - ensure tool execution response will be shown in a new message
-        context.roundManager.startNewRound()
-        context.streamBuffer.clear() // Clear buffer to ensure a new message will be created
+        startAssistantResponseRound(context)
 
         // Clearly show we're preparing to send tool result to AI
         if (!isSubTask) {

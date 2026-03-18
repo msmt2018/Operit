@@ -30,9 +30,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -100,6 +102,7 @@ fun WorkspaceManager(
         onExportClick: (workDir: File) -> Unit
 ) {
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val webViewRefreshCounter by actualViewModel.webViewRefreshCounter.collectAsState()
     val workspaceCommandExecutionState by actualViewModel.workspaceCommandExecutionState.collectAsState()
     val coroutineScope = rememberCoroutineScope()
@@ -799,11 +802,15 @@ fun WorkspaceManager(
         ) {
             WorkspaceCommandExecutionDialog(
                 state = commandDialogState,
-                onHide = { actualViewModel.hideWorkspaceCommandExecutionDialog(workspacePath) },
+                onClose = { actualViewModel.dismissWorkspaceCommandExecutionDialog(workspacePath) },
                 onCancel = {
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                         actualViewModel.cancelWorkspaceCommandExecution()
                     }
+                },
+                onCopyOutput = { output ->
+                    clipboardManager.setText(AnnotatedString(output))
+                    actualViewModel.showToast(context.getString(R.string.copied_to_clipboard))
                 }
             )
         }
@@ -813,10 +820,14 @@ fun WorkspaceManager(
 @Composable
 private fun WorkspaceCommandExecutionDialog(
     state: WorkspaceCommandExecutionState,
-    onHide: () -> Unit,
-    onCancel: () -> Unit
+    onClose: () -> Unit,
+    onCancel: () -> Unit,
+    onCopyOutput: (String) -> Unit
 ) {
     val listState = rememberLazyListState()
+    val outputText = remember(state.outputEntries) {
+        state.outputEntries.joinToString(separator = "\n")
+    }
 
     LaunchedEffect(state.outputEntries.size) {
         if (state.outputEntries.isNotEmpty()) {
@@ -825,7 +836,7 @@ private fun WorkspaceCommandExecutionDialog(
     }
 
     Dialog(
-        onDismissRequest = onHide,
+        onDismissRequest = onClose,
         properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
     ) {
         Surface(
@@ -920,12 +931,12 @@ private fun WorkspaceCommandExecutionDialog(
                         }
                     }
                 }
-                if (state.isRunning) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(onClick = onHide) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    if (state.isRunning) {
+                        TextButton(onClick = onClose) {
                             Text(stringResource(R.string.workspace_command_hide))
                         }
                         Spacer(modifier = Modifier.width(8.dp))
@@ -934,6 +945,17 @@ private fun WorkspaceCommandExecutionDialog(
                             enabled = !state.isCancelling
                         ) {
                             Text(stringResource(R.string.cancel))
+                        }
+                    } else {
+                        TextButton(
+                            onClick = { onCopyOutput(outputText) },
+                            enabled = state.outputEntries.isNotEmpty()
+                        ) {
+                            Text(stringResource(R.string.copy_result))
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        TextButton(onClick = onClose) {
+                            Text(stringResource(R.string.confirm))
                         }
                     }
                 }

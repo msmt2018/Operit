@@ -13,6 +13,12 @@ object FFmpegUtil {
     private const val TAG = "FFmpegUtil"
 
     /**
+     * Build a scale filter string that survives FFmpegKit argument parsing.
+     * FFmpeg expressions need an escaped comma when passed without a shell.
+     */
+    fun scaleFilterMaxWidth(maxWidth: Int): String = "scale=min(${maxWidth}\\,iw):-2"
+
+    /**
      * Execute an FFmpeg command and return if it was successful
      */
     fun executeCommand(command: String): Boolean {

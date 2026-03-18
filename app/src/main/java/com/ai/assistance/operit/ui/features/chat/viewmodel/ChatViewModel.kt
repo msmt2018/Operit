@@ -1977,10 +1977,7 @@ class ChatViewModel(private val context: Context) : ViewModel() {
                 }
 
                 val currentState = _workspaceCommandExecutionState.value
-                if (currentState?.sessionId == activeSessionId) {
-                    if (currentState.isVisible) {
-                        delay(1200)
-                    }
+                if (currentState?.sessionId == activeSessionId && !currentState.isVisible) {
                     _workspaceCommandExecutionState.value = null
                 }
             } catch (e: Exception) {
@@ -2040,12 +2037,17 @@ class ChatViewModel(private val context: Context) : ViewModel() {
         _showAiComputer.value = true
     }
 
-    fun hideWorkspaceCommandExecutionDialog(workspacePath: String) {
+    fun dismissWorkspaceCommandExecutionDialog(workspacePath: String) {
         val currentState = _workspaceCommandExecutionState.value ?: return
-        if (currentState.workspacePath != workspacePath || !currentState.isRunning) {
+        if (currentState.workspacePath != workspacePath) {
             return
         }
-        _workspaceCommandExecutionState.value = currentState.copy(isVisible = false)
+        _workspaceCommandExecutionState.value =
+            if (currentState.isRunning) {
+                currentState.copy(isVisible = false)
+            } else {
+                null
+            }
     }
 
     @RequiresApi(Build.VERSION_CODES.O)

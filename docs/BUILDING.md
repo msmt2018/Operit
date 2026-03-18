@@ -185,11 +185,12 @@ cd Operit
 git submodule update --init --recursive
 ```  
 2. **下载并放置依赖库 (关键步骤！):**  
-`README.md` 中提到，项目依赖一些需要手动下载的库。请从 [这个 Google Drive 链接](https://drive.google.com/drive/folders/1g-Q_i7cf6Ua4KX9ZM6V282EEZvTVVfF7?usp=sharing) 下载所有文件，并将它们解压或放置到项目根目录下对应的 `libs` 或有 `.keep` 文件的文件夹中。  **警告：** 如果跳过此步骤，编译将因缺少依赖而失败。下载到的三个压缩包解压覆盖这三个文件夹就可以了。  
+`README.md` 中提到，项目依赖一些需要手动下载的库。请从 [这个 Google Drive 链接](https://drive.google.com/drive/folders/1g-Q_i7cf6Ua4KX9ZM6V282EEZvTVVfF7?usp=sharing) 下载所有文件，并将它们解压或放置到项目根目录下对应的 `libs` 或有 `.keep` 文件的文件夹中。  **警告：** 如果跳过此步骤，编译将因缺少依赖而失败。当前需要下载并解压这四个压缩包：`models.zip`、`subpack.zip`、`jniLibs.zip`、`libs.zip`。  
 ```bash
 ./app/src/main/assets/models/.keep  
 ./app/src/main/assets/subpack/.keep  
 ./app/src/main/jniLibs/.keep
+./app/libs
 ```
 
 3. **切换到你的工作分支 (如果需要):**

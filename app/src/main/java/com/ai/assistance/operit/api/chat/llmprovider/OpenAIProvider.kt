@@ -2074,38 +2074,39 @@ open class OpenAIProvider(
 
                 AppLogger.d("AIService", "【发送消息】正在建立连接到服务器...")
 
-                // 确保在IO线程执行网络请求
+                // 确保在IO线程执行网络请求和响应体读取
                 AppLogger.d("AIService", "【发送消息】切换到IO线程执行网络请求")
-                val response = withContext(Dispatchers.IO) { call.execute() }
+                withContext(Dispatchers.IO) {
+                    val response = call.execute()
 
-                // 保存response引用，以便取消时能强制关闭
-                activeResponse = response
+                    // 保存response引用，以便取消时能强制关闭
+                    activeResponse = response
 
-                try {
-                    if (!response.isSuccessful) {
-                        val errorBody = response.body?.string() ?: context.getString(R.string.openai_error_no_error_details)
-                        AppLogger.e(
-                            "AIService",
-                            "【发送消息】API请求失败，状态码: ${response.code}，错误信息: $errorBody"
-                        )
-                        // 4xx错误仍保留单独的异常类型，具体是否重试由统一策略决定
-                        if (response.code in 400..499) {
-                            throw NonRetriableException(context.getString(R.string.openai_error_api_request_failed_with_status, response.code, errorBody))
+                    try {
+                        if (!response.isSuccessful) {
+                            val errorBody =
+                                response.body?.string()
+                                    ?: context.getString(R.string.openai_error_no_error_details)
+                            AppLogger.e(
+                                "AIService",
+                                "【发送消息】API请求失败，状态码: ${response.code}，错误信息: $errorBody"
+                            )
+                            // 4xx错误仍保留单独的异常类型，具体是否重试由统一策略决定
+                            if (response.code in 400..499) {
+                                throw NonRetriableException(context.getString(R.string.openai_error_api_request_failed_with_status, response.code, errorBody))
+                            }
+                            // 对于5xx等服务端错误，允许重试
+                            throw IOException(context.getString(R.string.openai_error_api_request_failed_with_status, response.code, errorBody))
                         }
-                        // 对于5xx等服务端错误，允许重试
-                        throw IOException(context.getString(R.string.openai_error_api_request_failed_with_status, response.code, errorBody))
-                    }
 
-                    AppLogger.d(
-                        "AIService",
-                        "【发送消息】连接成功(状态码: ${response.code})，准备处理响应..."
-                    )
-                    val responseBody = response.body ?: throw IOException(context.getString(R.string.openai_error_response_empty))
+                        AppLogger.d(
+                            "AIService",
+                            "【发送消息】连接成功(状态码: ${response.code})，准备处理响应..."
+                        )
+                        val responseBody = response.body ?: throw IOException(context.getString(R.string.openai_error_response_empty))
 
-                    // 根据stream参数处理响应
-                    if (stream) {
-                        // 处理流式响应
-                        withContext(Dispatchers.IO) {
+                        // 根据stream参数处理响应
+                        if (stream) {
                             AppLogger.d("AIService", "【发送消息】开始读取流式响应")
                             val reader = responseBody.charStream().buffered()
                             processStreamingResponse(
@@ -2114,10 +2115,7 @@ open class OpenAIProvider(
                                 onTokensUpdated,
                                 context
                             )
-                        }
-                    } else {
-                        // 处理非流式响应
-                        withContext(Dispatchers.IO) {
+                        } else {
                             AppLogger.d("AIService", "【发送消息】开始读取非流式响应")
                             val responseText = responseBody.string()
                             AppLogger.d("AIService", "收到完整响应，长度: ${responseText.length}")
@@ -2203,16 +2201,16 @@ open class OpenAIProvider(
                                 throw IOException(context.getString(R.string.openai_error_parse_response_failed, e.message ?: ""), e)
                             }
                         }
+                    } finally {
+                        response.close()
+                        AppLogger.d("AIService", "【发送消息】关闭响应连接")
                     }
-
-                    // 清理活跃引用
-                    activeCall = null
-                    activeResponse = null
-                    AppLogger.d("AIService", "【发送消息】响应处理完成，已清理活跃引用")
-                } finally {
-                    response.close()
-                    AppLogger.d("AIService", "【发送消息】关闭响应连接")
                 }
+
+                // 清理活跃引用
+                activeCall = null
+                activeResponse = null
+                AppLogger.d("AIService", "【发送消息】响应处理完成，已清理活跃引用")
 
                 // 成功处理后返回
                 AppLogger.d(

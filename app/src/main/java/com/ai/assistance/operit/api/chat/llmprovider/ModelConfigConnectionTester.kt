@@ -48,7 +48,8 @@ object ModelConfigConnectionTester {
         modelConfigManager: ModelConfigManager,
         config: ModelConfigData,
         customHeadersJson: String,
-        requestedModelIndex: Int = 0
+        requestedModelIndex: Int = 0,
+        onActiveServiceChanged: (AIService?) -> Unit = {}
     ): ModelConnectionTestReport {
         val actualModelIndex = getValidModelIndex(config.modelName, requestedModelIndex)
         val testedModelName = getModelByIndex(config.modelName, actualModelIndex)
@@ -63,6 +64,7 @@ object ModelConfigConnectionTester {
                 modelConfigManager = modelConfigManager,
                 context = context
             )
+        onActiveServiceChanged(service)
 
         try {
             val parameters = modelConfigManager.getModelParametersForConfig(configForTest.id)
@@ -246,6 +248,7 @@ object ModelConfigConnectionTester {
                 }
             }
         } catch (e: CancellationException) {
+            runCatching { service.cancelStreaming() }
             throw e
         } catch (e: Exception) {
             if (items.none { it.type == ModelConnectionTestType.CHAT }) {
@@ -258,6 +261,7 @@ object ModelConfigConnectionTester {
                 )
             }
         } finally {
+            onActiveServiceChanged(null)
             service.release()
         }
 

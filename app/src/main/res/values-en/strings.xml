@@ -3159,7 +3159,7 @@
     <string name="workspace_command_already_running">A workspace command is already running</string>
     <string name="workspace_command_running">Command running</string>
     <string name="workspace_command_cancelling">Cancelling command...</string>
-    <string name="workspace_command_finished">Command finished</string>
+    <string name="workspace_command_finished">Execution complete</string>
     <string name="workspace_command_waiting_output">Waiting for command output...</string>
     <string name="workspace_command_no_output">Command produced no output</string>
     <string name="workspace_command_hide">Hide</string>
@@ -6538,6 +6538,7 @@
     <string name="enhanced_error_with_message">Error: %1$s</string>
     <string name="enhanced_tool_warning">Warning: Tool calls and waiting for user response cannot exist at the same time. Tool calls were processed, but this is extremely dangerous.</string>
     <string name="enhanced_pure_thinking_only_warning">Warning: Please output main content and do not output thinking-only responses.</string>
+    <string name="enhanced_truncated_tool_call_warning">Warning: A tool call was truncated by the model output limit. All tool calls in this round were invalidated and will not be executed. Try reducing single-turn output, splitting the task, or switching to a more suitable model/provider.</string>
     <string name="status_warning_ai_error_summary">The AI made an error</string>
     <string name="status_warning_ai_error_detail_title">AI Error Reason</string>
     <string name="enhanced_receiving_tool_result">Receiving AI response after tool execution...</string>

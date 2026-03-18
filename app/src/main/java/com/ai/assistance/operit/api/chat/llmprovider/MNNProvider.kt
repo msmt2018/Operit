@@ -308,7 +308,9 @@ class MNNProvider(
         val out = File(dir, "frame_${System.currentTimeMillis()}_${kotlin.random.Random.nextInt(0, Int.MAX_VALUE)}.jpg")
         val inPath = "\"" + input.absolutePath.replace("\"", "\\\"") + "\""
         val outPath = "\"" + out.absolutePath.replace("\"", "\\\"") + "\""
-        val ok = FFmpegUtil.executeCommand("-y -i $inPath -frames:v 1 -vf scale='min(640,iw)':-2 $outPath")
+        val ok = FFmpegUtil.executeCommand(
+            "-y -i $inPath -frames:v 1 -vf ${FFmpegUtil.scaleFilterMaxWidth(640)} $outPath"
+        )
         if (!ok || !out.exists() || out.length() <= 0) {
             runCatching { out.delete() }
             return null

@@ -160,6 +160,8 @@ class FloatingFullscreenModeViewModel(
                 if (observedAiBusy && !busy) {
                     shouldResumeVoiceCaptureAfterAiTurn = false
                     isVoiceCapturePausedForAi = false
+                    // AI 这一轮结束后，总是从此刻重新开始计算空闲超时。
+                    lastVoiceActivityAtMs = System.currentTimeMillis()
                     if (!speechManager.isRecording && !speechManager.isProcessingSpeech) {
                         startVoiceCapture()
                     }

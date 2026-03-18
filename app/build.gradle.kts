@@ -193,8 +193,8 @@ dependencies {
     implementation("com.google.android.filament:gltfio-android:1.69.2")
     implementation("com.google.android.filament:filament-utils-android:1.69.2")
     implementation(libs.androidx.ui.graphics.android)
-    implementation(files("libs\\ffmpegkit.jar"))
-    implementation(files("libs\\arsc.jar"))
+    // Vendored binary dependencies live in app/libs, including ffmpeg-kit and its Java-side deps.
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))
     implementation(libs.androidx.runtime.android)
     implementation(libs.androidx.ui.text.android)
     implementation(libs.androidx.animation.android)

@@ -388,7 +388,7 @@ Join the Operit open-source ecosystem! We welcome all types of contributions: th
 
 **Developer Notes:**
 - 📚 [Contribution Guide](docs/CONTRIBUTING.md) | [Script Development Guide (Chinese)](docs/SCRIPT_DEV_GUIDE.md)
-- 📦 Building requires downloading dependencies from [Google Drive](https://drive.google.com/drive/folders/1g-Q_i7cf6Ua4KX9ZM6V282EEZvTVVfF7?usp=sharing)
+- 📦 Building requires downloading dependency archives from [Google Drive](https://drive.google.com/drive/folders/1g-Q_i7cf6Ua4KX9ZM6V282EEZvTVVfF7?usp=sharing) (`models.zip`, `subpack.zip`, `jniLibs.zip`, `libs.zip`)
 - 💬 Join community discussions: [QQ Group](https://qm.qq.com/q/Sa4fKEH7sO) | [Discord](https://discord.gg/YnV9MWurRF)
 
 ### 💖 Contributors

@@ -3060,7 +3060,7 @@
     <string name="workspace_command_already_running">已有工作区命令正在运行</string>
     <string name="workspace_command_running">命令运行中</string>
     <string name="workspace_command_cancelling">正在取消命令...</string>
-    <string name="workspace_command_finished">命令已完成</string>
+    <string name="workspace_command_finished">执行完成</string>
     <string name="workspace_command_waiting_output">正在等待命令输出...</string>
     <string name="workspace_command_no_output">命令没有输出</string>
     <string name="workspace_command_hide">隐藏</string>
@@ -6555,6 +6555,7 @@
     <string name="enhanced_error_with_message">错误: %1$s</string>
     <string name="enhanced_tool_warning">警告：工具调用和等待用户响应不能同时存在。工具调用被处理了，但这是极具危险性的。</string>
     <string name="enhanced_pure_thinking_only_warning">警告：请输出正文内容，禁止仅输出思考内容。</string>
+    <string name="enhanced_truncated_tool_call_warning">警告：检测到工具调用输出被截断。本轮所有工具调用均已作废且不会执行。请尝试减少单次输出、拆分任务，或更换更合适的模型/供应商后重试。</string>
     <string name="status_warning_ai_error_summary">ai犯了一个错误</string>
     <string name="status_warning_ai_error_detail_title">AI错误原因</string>
     <string name="enhanced_receiving_tool_result">正在接收工具执行后的AI响应...</string>

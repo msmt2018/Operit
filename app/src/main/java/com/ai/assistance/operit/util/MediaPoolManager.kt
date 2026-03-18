@@ -51,11 +51,13 @@ object MediaPoolManager {
             val out = File(dir, "${UUID.randomUUID()}.mp4")
             val inPath = q(source.absolutePath)
             val outPath = q(out.absolutePath)
+            val scale640 = FFmpegUtil.scaleFilterMaxWidth(640)
+            val scale480 = FFmpegUtil.scaleFilterMaxWidth(480)
 
             val commands = listOf(
-                "-y -i $inPath -vf scale='min(640,iw)':-2 -c:v h264 -preset veryfast -crf 32 -c:a aac -b:a 64k -movflags +faststart $outPath",
-                "-y -i $inPath -vf scale='min(640,iw)':-2 -c:v mpeg4 -q:v 8 -c:a aac -b:a 64k -movflags +faststart $outPath",
-                "-y -i $inPath -vf scale='min(480,iw)':-2 -c:v mpeg4 -q:v 12 -c:a aac -b:a 48k -movflags +faststart $outPath"
+                "-y -i $inPath -vf $scale640 -c:v h264 -preset veryfast -crf 32 -c:a aac -b:a 64k -movflags +faststart $outPath",
+                "-y -i $inPath -vf $scale640 -c:v mpeg4 -q:v 8 -c:a aac -b:a 64k -movflags +faststart $outPath",
+                "-y -i $inPath -vf $scale480 -c:v mpeg4 -q:v 12 -c:a aac -b:a 48k -movflags +faststart $outPath"
             )
 
             for (cmd in commands) {
